@@ -21,7 +21,7 @@ aliases:
 ## Path-based Links
 
 - Folder path: [[folder/subfolder/note]]
-- Parent folder: [[../parent-note]]
+- Parent folder: [parent-note](./parent-note.md)
 
 ## External Links
 

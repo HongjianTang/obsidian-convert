@@ -94,10 +94,15 @@ export class Converter {
       attachmentPath: '/attachments/',
     });
 
-    // Initialize link resolver
+    // Initialize link resolver with config options
+    const linkResolutionConfig = config.linkResolution || {};
     this.linkResolver = new LinkResolver({
       caseInsensitive: true,
       warnOnBroken: options.warnOnBroken ?? false,
+      conflictStrategy: linkResolutionConfig.conflictStrategy,
+      strictMode: linkResolutionConfig.strictMode,
+      autoIndex: linkResolutionConfig.autoIndex,
+      verbose: this.verbose,
     });
 
     // Initialize WikiLink processor
