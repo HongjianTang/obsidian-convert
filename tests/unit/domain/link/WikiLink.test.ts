@@ -186,4 +186,75 @@ describe('WikiLink', () => {
       expect(matches).toContain('![[image.png]]');
     });
   });
+
+  describe('resolvePath', () => {
+    it('should resolve wiki link target to file path', () => {
+      const link = WikiLink.parse('[[MyNote]]');
+      expect(link).not.toBeNull();
+
+      // Create a mock resolver
+      const mockResolver = {
+        resolve: jest.fn().mockReturnValue({
+          found: true,
+          file: {
+            absolutePath: '/root/MyNote.md',
+            relativePath: 'MyNote.md',
+            basename: 'MyNote',
+            filename: 'MyNote.md',
+          },
+          relativePath: './MyNote.md',
+          isBroken: false,
+        }),
+      };
+
+      const result = link!.resolvePath(mockResolver as any, '/root/test.md', '/root');
+
+      expect(mockResolver.resolve).toHaveBeenCalledWith('MyNote', '/root/test.md', '/root');
+      expect(result.found).toBe(true);
+      expect(result.file?.basename).toBe('MyNote');
+    });
+
+    it('should handle heading in resolvePath', () => {
+      const link = WikiLink.parse('[[MyNote#Introduction]]');
+      expect(link).not.toBeNull();
+      expect(link!.heading).toBe('Introduction');
+      expect(link!.target).toBe('MyNote');
+
+      const mockResolver = {
+        resolve: jest.fn().mockReturnValue({
+          found: true,
+          file: {
+            absolutePath: '/root/MyNote.md',
+            relativePath: 'MyNote.md',
+            basename: 'MyNote',
+            filename: 'MyNote.md',
+          },
+          relativePath: './MyNote.md',
+          isBroken: false,
+        }),
+      };
+
+      link!.resolvePath(mockResolver as any, '/root/test.md', '/root');
+
+      // Note: resolvePath passes the target (without heading) to the resolver
+      // The heading is preserved in the WikiLink and handled separately
+      expect(mockResolver.resolve).toHaveBeenCalledWith('MyNote', '/root/test.md', '/root');
+    });
+
+    it('should handle broken link in resolvePath', () => {
+      const link = WikiLink.parse('[[Nonexistent]]');
+
+      const mockResolver = {
+        resolve: jest.fn().mockReturnValue({
+          found: false,
+          isBroken: true,
+        }),
+      };
+
+      const result = link!.resolvePath(mockResolver as any, '/root/test.md', '/root');
+
+      expect(result.found).toBe(false);
+      expect(result.isBroken).toBe(true);
+    });
+  });
 });
