@@ -25,6 +25,44 @@ export interface LinkResolutionConfig {
 }
 
 /**
+ * Streaming configuration for large file handling
+ */
+export interface StreamingConfig {
+  /** Enable streaming mode for large files (default: true) */
+  enabled?: boolean;
+  /** Chunk size for streaming (default: 64KB) */
+  highWaterMark?: number;
+  /** Max file size to buffer entirely before streaming (default: 10MB) */
+  maxBufferSize?: number;
+}
+
+/**
+ * Worker thread configuration
+ */
+export interface WorkerConfig {
+  /** Number of worker threads (default: 0 = auto based on CPU cores) */
+  workers?: number;
+  /** Worker strategy: 'auto' distributes automatically, 'manual' requires explicit dispatch */
+  workerStrategy?: 'auto' | 'manual';
+  /** Timeout for worker tasks in ms (default: 30000) */
+  taskTimeout?: number;
+  /** Enable worker crash recovery (default: true) */
+  enableRecovery?: boolean;
+}
+
+/**
+ * Incremental conversion configuration
+ */
+export interface IncrementalConfig {
+  /** Path to state file for tracking converted files */
+  statePath?: string;
+  /** Enable watch mode for continuous conversion */
+  watch?: boolean;
+  /** Debounce delay for file changes in watch mode (ms, default: 500) */
+  watchDebounce?: number;
+}
+
+/**
  * Main configuration for obsidian-convert
  */
 export interface Config {
@@ -36,6 +74,12 @@ export interface Config {
   attachmentDir?: string;
   /** Link resolution configuration */
   linkResolution?: LinkResolutionConfig;
+  /** Streaming configuration for large files */
+  streaming?: StreamingConfig;
+  /** Worker thread configuration */
+  worker?: WorkerConfig;
+  /** Incremental conversion configuration */
+  incremental?: IncrementalConfig;
 }
 
 /**
