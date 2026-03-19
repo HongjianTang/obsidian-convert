@@ -1,3 +1,5 @@
+import { ConflictStrategy } from '../../domain/link';
+
 /**
  * Source folder configuration
  */
@@ -11,6 +13,18 @@ export interface SourceFolderConfig {
 }
 
 /**
+ * Link resolution configuration
+ */
+export interface LinkResolutionConfig {
+  /** Conflict resolution strategy (default: 'nearest') */
+  conflictStrategy?: ConflictStrategy;
+  /** Strict mode - throw error on broken links (default: false) */
+  strictMode?: boolean;
+  /** Auto build index (default: true) */
+  autoIndex?: boolean;
+}
+
+/**
  * Main configuration for obsidian-convert
  */
 export interface Config {
@@ -20,6 +34,8 @@ export interface Config {
   outputDir: string;
   /** Attachment output directory (relative to outputDir, default: "public/attachments") */
   attachmentDir?: string;
+  /** Link resolution configuration */
+  linkResolution?: LinkResolutionConfig;
 }
 
 /**
