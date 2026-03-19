@@ -1,9 +1,24 @@
 import * as path from 'path';
+import { ErrorReporter, ErrorLevel, ErrorCategory, SourceLocation } from '../error';
 
 /**
  * Conflict resolution strategies for when multiple files match a link target
  */
 export type ConflictStrategy = 'nearest' | 'first' | 'warn' | 'error';
+
+/**
+ * Enhanced broken link with location info
+ */
+export interface BrokenLinkInfo {
+  /** The link target that wasn't found */
+  target: string;
+  /** The file where the link was found */
+  sourceFile: string;
+  /** Location of the link in the source file */
+  location: SourceLocation;
+  /** Full WikiLink text for context */
+  fullLink?: string;
+}
 
 /**
  * Represents a file in the vault index
@@ -83,7 +98,9 @@ export class LinkResolver {
   private readonly autoIndex: boolean;
   private readonly verbose: boolean;
   private readonly brokenLinks: string[] = [];
+  private readonly enhancedBrokenLinks: BrokenLinkInfo[] = [];
   private sourceRoots: string[] = [];
+  private errorReporter: ErrorReporter;
 
   constructor(options: LinkResolverOptions = {}) {
     this.caseInsensitive = options.caseInsensitive ?? true;
@@ -92,6 +109,7 @@ export class LinkResolver {
     this.strictMode = options.strictMode ?? false;
     this.autoIndex = options.autoIndex ?? true;
     this.verbose = options.verbose ?? false;
+    this.errorReporter = new ErrorReporter(options.verbose ?? false);
   }
 
   /**
@@ -115,8 +133,14 @@ export class LinkResolver {
    * @param target - The WikiLink target (e.g., "MyNote", "folder/MyNote")
    * @param currentFilePath - Path to the current file (for relative resolution)
    * @param sourceRoot - Root source directory
+   * @param location - Optional source location for error tracking
    */
-  resolve(target: string, currentFilePath: string, sourceRoot: string): LinkResolutionResult {
+  resolve(
+    target: string,
+    currentFilePath: string,
+    sourceRoot: string,
+    location?: SourceLocation
+  ): LinkResolutionResult {
     // Normalize target - remove .md extension if present
     let normalizedTarget = target.endsWith('.md') ? target.slice(0, -3) : target;
 
@@ -167,7 +191,12 @@ export class LinkResolver {
       console.warn(`Broken link: [[${target}]] in ${currentFilePath}`);
     }
 
-    this.brokenLinks.push(`${currentFilePath}:${target}`);
+    // Track with enhanced info if location provided
+    if (location) {
+      this.trackBrokenLink(target, currentFilePath, location);
+    } else {
+      this.brokenLinks.push(`${currentFilePath}:${target}`);
+    }
 
     return {
       found: false,
@@ -190,10 +219,48 @@ export class LinkResolver {
   }
 
   /**
+   * Get broken links with enhanced location info
+   */
+  getEnhancedBrokenLinks(): BrokenLinkInfo[] {
+    return [...this.enhancedBrokenLinks];
+  }
+
+  /**
+   * Track a broken link with full location info
+   */
+  trackBrokenLink(
+    target: string,
+    sourceFile: string,
+    location: SourceLocation,
+    fullLink?: string
+  ): void {
+    this.brokenLinks.push(`${sourceFile}:${target}`);
+    this.enhancedBrokenLinks.push({ target, sourceFile, location, fullLink });
+
+    // Also add to error reporter
+    this.errorReporter.addLinkError(
+      `Broken link: [[${target}]]`,
+      sourceFile,
+      location.line,
+      location.column,
+      target
+    );
+  }
+
+  /**
+   * Get the error reporter for formatted error output
+   */
+  getErrorReporter(): ErrorReporter {
+    return this.errorReporter;
+  }
+
+  /**
    * Clear broken links tracking
    */
   clearBrokenLinks(): void {
     this.brokenLinks.length = 0;
+    this.enhancedBrokenLinks.length = 0;
+    this.errorReporter.clear();
   }
 
   /**

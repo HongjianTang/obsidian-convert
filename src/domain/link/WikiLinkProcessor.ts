@@ -1,5 +1,6 @@
 import { WikiLink } from './WikiLink';
 import { LinkResolver } from './LinkResolver';
+import { SourceLocation } from '../error';
 
 /**
  * Options for WikiLink processor
@@ -11,6 +12,8 @@ export interface WikiLinkProcessorOptions {
   brokenLinkPlaceholder?: string;
   /** Whether to add .md extension to links */
   addMdExtension?: boolean;
+  /** Whether to track source locations for errors (default: false) */
+  trackLocations?: boolean;
 }
 
 /**
@@ -36,6 +39,7 @@ export class WikiLinkProcessor {
     private readonly options: WikiLinkProcessorOptions = {
       brokenLinkHandling: 'keep',
       addMdExtension: true,
+      trackLocations: false,
     }
   ) {}
 
@@ -62,11 +66,18 @@ export class WikiLinkProcessor {
       // Skip attachments - they're handled by AttachmentHandler
       if (wikiLink.isAttachment()) continue;
 
+      // Calculate source location if tracking is enabled
+      let location: SourceLocation | undefined;
+      if (this.options.trackLocations && match.index !== undefined) {
+        location = this.calculateLocation(content, match.index);
+      }
+
       // Resolve the link
       const resolution = this.linkResolver.resolve(
         wikiLink.target,
         currentFilePath,
-        sourceRoot
+        sourceRoot,
+        location
       );
 
       if (resolution.found && resolution.relativePath) {
@@ -102,6 +113,16 @@ export class WikiLinkProcessor {
       brokenCount,
       brokenLinks,
     };
+  }
+
+  /**
+   * Calculate line and column from character index
+   */
+  private calculateLocation(content: string, index: number): SourceLocation {
+    const lines = content.substring(0, index).split(/\r?\n/);
+    const line = lines.length;
+    const column = lines[lines.length - 1].length + 1;
+    return { line, column };
   }
 
   /**
