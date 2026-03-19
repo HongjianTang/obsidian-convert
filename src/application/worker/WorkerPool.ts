@@ -33,10 +33,25 @@ export interface WorkerPoolOptions {
   taskTimeout?: number;
   /** Enable worker recovery on crash */
   enableRecovery?: boolean;
+  /** Enable graceful degradation when workers unavailable (default: true) */
+  gracefulDegradation?: boolean;
+}
+
+/**
+ * Check if worker threads are supported in the current environment
+ */
+function isWorkerThreadsSupported(): boolean {
+  try {
+    // Check if we're in main thread and worker_threads module is available
+    return isMainThread;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * WorkerPool manages a pool of worker threads for parallel conversion
+ * Supports graceful degradation when workers are unavailable
  */
 export class WorkerPool extends EventEmitter {
   private workers: Worker[] = [];
@@ -49,7 +64,9 @@ export class WorkerPool extends EventEmitter {
   private readonly workerCount: number;
   private readonly taskTimeout: number;
   private readonly enableRecovery: boolean;
+  private readonly gracefulDegradation: boolean;
   private closed = false;
+  private workersAvailable = true;
 
   constructor(options: WorkerPoolOptions = {}) {
     super();
@@ -58,16 +75,32 @@ export class WorkerPool extends EventEmitter {
     this.workerCount = options.workerCount || Math.max(1, os.cpus().length - 1);
     this.taskTimeout = options.taskTimeout || 30000;
     this.enableRecovery = options.enableRecovery !== false;
+    this.gracefulDegradation = options.gracefulDegradation !== false;
 
     this.initialize();
   }
 
   private initialize(): void {
     // Only initialize in main thread
-    if (isMainThread) {
-      for (let i = 0; i < this.workerCount; i++) {
-        this.createWorker(i);
+    if (isMainThread && isWorkerThreadsSupported()) {
+      try {
+        for (let i = 0; i < this.workerCount; i++) {
+          this.createWorker(i);
+        }
+        this.workersAvailable = true;
+      } catch (error) {
+        this.workersAvailable = false;
+        this.emit('worker-unavailable', {
+          error: error instanceof Error ? error.message : String(error),
+          reason: 'initialization_failed',
+        });
       }
+    } else {
+      this.workersAvailable = false;
+      this.emit('worker-unavailable', {
+        error: 'Worker threads not supported in this environment',
+        reason: 'not_supported',
+      });
     }
   }
 
@@ -145,25 +178,58 @@ export class WorkerPool extends EventEmitter {
 
   /**
    * Execute a task on an available worker
+   * Falls back gracefully when workers are unavailable
    */
   async executeTask(task: WorkerTask): Promise<WorkerResult> {
     if (this.closed) {
-      throw new Error('WorkerPool is closed');
+      return {
+        id: task.id,
+        success: false,
+        error: 'WorkerPool is closed',
+        workerId: -1,
+      };
+    }
+
+    // Check if workers are available
+    if (!this.workersAvailable || this.workers.length === 0) {
+      if (this.gracefulDegradation) {
+        this.emit('fallback', { taskId: task.id, reason: 'workers_unavailable' });
+        return {
+          id: task.id,
+          success: false,
+          error: 'Workers unavailable - use main thread fallback',
+          workerId: -1,
+        };
+      }
+      throw new Error('WorkerPool workers are not available');
     }
 
     // Wait for available worker
-    const worker = await this.waitForAvailableWorker();
+    try {
+      const worker = await this.waitForAvailableWorker();
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingTasks.delete(task.id);
-        reject(new Error(`Task ${task.id} timed out after ${this.taskTimeout}ms`));
-      }, this.taskTimeout);
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.pendingTasks.delete(task.id);
+          reject(new Error(`Task ${task.id} timed out after ${this.taskTimeout}ms`));
+        }, this.taskTimeout);
 
-      this.pendingTasks.set(task.id, { resolve, reject, timeout });
+        this.pendingTasks.set(task.id, { resolve, reject, timeout });
 
-      worker.postMessage(task);
-    });
+        worker.postMessage(task);
+      });
+    } catch (error) {
+      if (this.gracefulDegradation && this.workers.length === 0) {
+        this.emit('fallback', { taskId: task.id, reason: 'all_workers_failed' });
+        return {
+          id: task.id,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          workerId: -1,
+        };
+      }
+      throw error;
+    }
   }
 
   private async waitForAvailableWorker(): Promise<Worker> {
@@ -201,6 +267,20 @@ export class WorkerPool extends EventEmitter {
    */
   getWorkerCount(): number {
     return this.workers.length;
+  }
+
+  /**
+   * Check if workers are currently available
+   */
+  isAvailable(): boolean {
+    return this.workersAvailable && this.workers.length > 0 && !this.closed;
+  }
+
+  /**
+   * Check if graceful degradation is enabled
+   */
+  hasGracefulDegradation(): boolean {
+    return this.gracefulDegradation;
   }
 
   /**
