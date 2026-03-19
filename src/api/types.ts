@@ -1,5 +1,6 @@
 import type { Config, SourceFolderConfig, StreamingConfig, WorkerConfig, IncrementalConfig } from '../infrastructure/config/Config';
 import type { TransformerConfig } from '../domain/transformer';
+import type { PluginOptions, ResourceLimits } from '../plugin/types';
 
 /**
  * Event types for conversion lifecycle
@@ -91,6 +92,14 @@ export interface ObsidianConvertOptions {
   workers?: WorkerConfig;
   /** Incremental conversion configuration */
   incremental?: IncrementalConfig;
+  /** Plugin configuration */
+  plugins?: PluginOptions[];
+  /** Plugin directory path */
+  pluginDir?: string;
+  /** Enable plugin sandbox (default: true) */
+  pluginSandboxEnabled?: boolean;
+  /** Plugin resource limits */
+  pluginResourceLimits?: ResourceLimits;
 }
 
 /**

@@ -62,3 +62,35 @@ export type {
   ConversionState,
   FileConversionState,
 } from './application/convert/IncrementalConverter';
+
+// Plugin system exports
+export type {
+  PluginManifest,
+  PluginConfigItem,
+  PluginSandboxContext,
+  ResourceLimits,
+  PluginAPIKind,
+  PluginHooks,
+  ConvertContext,
+  FileContext,
+  FileResult,
+  PluginError,
+  ErrorContext,
+  ObsidianConvertPlugin,
+  PluginAPI,
+  PluginEvent,
+  PluginOptions,
+  PluginLoadOptions,
+  LoadedPlugin,
+} from './plugin';
+
+export {
+  PluginLoader,
+  PluginRegistry,
+  PluginSandbox,
+  HookDispatcher,
+  PluginErrorHandler,
+  ErrorSeverity,
+  PluginConfigValidator,
+  PluginHost,
+} from './plugin';
