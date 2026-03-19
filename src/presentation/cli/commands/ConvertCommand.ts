@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { YamlConfigLoader, ConfigError, Config } from '../../../infrastructure/config';
-import { Converter, ConversionResult } from '../../../application/convert';
+import { Converter, ConversionResult, MemoryMonitor, getGlobalMemoryMonitor } from '../../../application/convert';
 
 /**
  * Options for the convert command
@@ -40,6 +40,11 @@ export interface ConvertCommandResult {
  */
 export class ConvertCommand {
   private readonly configLoader = new YamlConfigLoader();
+  private memoryMonitor?: MemoryMonitor;
+  private startTime = 0;
+  private processedFiles = 0;
+  private totalFiles = 0;
+  private lastProgressUpdate = 0;
 
   constructor(private readonly options: ConvertCommandOptions) {}
 
@@ -59,6 +64,9 @@ export class ConvertCommand {
         };
       }
 
+      // Initialize memory monitor
+      this.initializeMemoryMonitor(config);
+
       // Run converter
       const converter = new Converter(config, {
         verbose: this.options.verbose,
@@ -66,6 +74,7 @@ export class ConvertCommand {
         outputFormat: this.options.outputFormat,
         brokenLinkHandling: this.options.brokenLinkHandling,
         warnOnBroken: this.options.verbose,
+        onProgress: () => this.incrementProcessedFiles(),
       });
 
       console.log('Starting conversion...');
@@ -74,16 +83,36 @@ export class ConvertCommand {
       }
       console.log(`Output format: ${this.options.outputFormat || 'markdown'}`);
 
+      this.startTime = Date.now();
+      this.processedFiles = 0;
+      this.totalFiles = await this.countFiles(config);
+
+      // Start memory monitoring
+      this.memoryMonitor?.start();
+
+      // Set up progress display
+      const progressInterval = setInterval(() => {
+        this.displayProgress();
+      }, 500);
+
       const result = await converter.convert();
+
+      // Clear progress interval
+      clearInterval(progressInterval);
+
+      // Stop memory monitoring
+      this.memoryMonitor?.stop();
 
       // Output summary
       this.printSummary(result);
+      this.printMemoryStats();
 
       return {
         success: true,
         conversionResult: result,
       };
     } catch (error) {
+      this.memoryMonitor?.stop();
       if (error instanceof ConfigError) {
         console.error(`Configuration error: ${error.message}`);
         return {
@@ -101,6 +130,122 @@ export class ConvertCommand {
         errorMessage,
       };
     }
+  }
+
+  /**
+   * Initialize memory monitor based on configuration
+   */
+  private initializeMemoryMonitor(config: Config): void {
+    const streamingConfig = config.streaming;
+    if (streamingConfig?.enabled !== false) {
+      this.memoryMonitor = getGlobalMemoryMonitor({
+        maxMemory: streamingConfig?.maxMemory,
+        warningThreshold: streamingConfig?.memoryWarningThreshold ? streamingConfig.memoryWarningThreshold / 100 : undefined,
+      });
+
+      // Listen for memory warnings
+      this.memoryMonitor.on('memory-warning', (data) => {
+        console.warn(`\n⚠️  Memory warning: ${MemoryMonitor.formatBytes(data.heapUsed)} (${data.usagePercent.toFixed(1)}% of max)`);
+      });
+
+      this.memoryMonitor.on('memory-exceeded', (data) => {
+        console.error(`\n❌ Memory exceeded: ${MemoryMonitor.formatBytes(data.heapUsed)} (max: ${MemoryMonitor.formatBytes(data.maxMemory)})`);
+      });
+    }
+  }
+
+  /**
+   * Count total files to be processed
+   */
+  private async countFiles(config: Config): Promise<number> {
+    let count = 0;
+    for (const folder of config.sourceFolders) {
+      const absolutePath = path.resolve(folder.path);
+      count += await this.countFilesRecursive(absolutePath);
+    }
+    return count;
+  }
+
+  /**
+   * Recursively count markdown files
+   */
+  private async countFilesRecursive(dir: string): Promise<number> {
+    let count = 0;
+    try {
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory() && !entry.name.startsWith('.') && !['node_modules', '.obsidian'].includes(entry.name)) {
+          count += await this.countFilesRecursive(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          count++;
+        }
+      }
+    } catch {
+      // Ignore permission errors
+    }
+    return count;
+  }
+
+  /**
+   * Display progress information
+   */
+  private displayProgress(): void {
+    if (this.totalFiles === 0 || !this.startTime) return;
+
+    const now = Date.now();
+    const elapsed = now - this.startTime;
+    const filesPerSecond = this.processedFiles / (elapsed / 1000);
+    const remainingFiles = this.totalFiles - this.processedFiles;
+    const estimatedRemainingSeconds = filesPerSecond > 0 ? remainingFiles / filesPerSecond : 0;
+
+    const percent = ((this.processedFiles / this.totalFiles) * 100).toFixed(1);
+    const eta = this.formatDuration(estimatedRemainingSeconds * 1000);
+    const elapsedStr = this.formatDuration(elapsed);
+
+    // Build progress bar
+    const barLength = 30;
+    const filledLength = Math.round((this.processedFiles / this.totalFiles) * barLength);
+    const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+
+    const memoryInfo = this.memoryMonitor ? ` | ${this.memoryMonitor.getSummary()}` : '';
+
+    // Use carriage return to overwrite the line
+    process.stdout.write(`\r[${bar}] ${percent}% | ${this.processedFiles}/${this.totalFiles} files | ETA: ${eta} | Elapsed: ${elapsedStr}${memoryInfo}  `);
+
+    this.lastProgressUpdate = now;
+  }
+
+  /**
+   * Update processed files count (to be called by converter)
+   */
+  incrementProcessedFiles(): void {
+    this.processedFiles++;
+  }
+
+  /**
+   * Format duration in milliseconds to human-readable string
+   */
+  private formatDuration(ms: number): string {
+    if (ms < 0 || !isFinite(ms)) return '--:--';
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  }
+
+  /**
+   * Print memory statistics summary
+   */
+  private printMemoryStats(): void {
+    if (!this.memoryMonitor) return;
+
+    const peak = this.memoryMonitor.getPeakUsage();
+    console.log(`\nPeak memory usage: ${MemoryMonitor.formatBytes(peak)}`);
   }
 
   private async loadConfig(): Promise<Config> {
@@ -147,6 +292,9 @@ export class ConvertCommand {
   }
 
   private printSummary(result: ConversionResult): void {
+    // Clear the progress line first
+    process.stdout.write('\r' + ' '.repeat(100) + '\r');
+
     console.log('\n=== Conversion Summary ===');
     console.log(`Total files: ${result.totalFiles}`);
     console.log(`Successful: ${result.successCount}`);
@@ -154,6 +302,10 @@ export class ConvertCommand {
     console.log(`Attachments: ${result.totalAttachments}`);
     console.log(`WikiLinks converted: ${result.totalWikiLinks}`);
     console.log(`Callouts converted: ${result.totalCallouts}`);
+
+    // Print timing
+    const elapsed = Date.now() - this.startTime;
+    console.log(`Time elapsed: ${this.formatDuration(elapsed)}`);
 
     if (result.brokenLinks.length > 0) {
       console.log(`\nBroken links (${result.brokenLinks.length}):`);

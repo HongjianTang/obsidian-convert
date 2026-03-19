@@ -52,17 +52,20 @@ describe('WorkerPool', () => {
       expect(workerPool.getWorkerCount()).toBe(0);
     });
 
-    it('should reject pending tasks when closed', async () => {
+    it('should return error result when closed', async () => {
       workerPool = new WorkerPool({ workerCount: 1, taskTimeout: 100 });
 
       // Try to execute a task after closing
       await workerPool.close();
 
-      await expect(workerPool.executeTask({
+      const result = await workerPool.executeTask({
         id: 'test-task',
         type: 'index',
         sourceRoot: '/test',
-      })).rejects.toThrow('WorkerPool is closed');
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('WorkerPool is closed');
     });
   });
 
