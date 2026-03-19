@@ -74,6 +74,7 @@ export class ConvertCommand {
         outputFormat: this.options.outputFormat,
         brokenLinkHandling: this.options.brokenLinkHandling,
         warnOnBroken: this.options.verbose,
+        onProgress: () => this.incrementProcessedFiles(),
       });
 
       console.log('Starting conversion...');
