@@ -1,0 +1,29 @@
+{
+  "name": "obsidian-convert",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "bin": {
+    "obsidian-convert": "./dist/presentation/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsc --project tsconfig.build.json --watch",
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "description": "Convert Obsidian notes into fumadocs friendly files",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.4.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "yaml": "^2.8.2"
+  }
+}
