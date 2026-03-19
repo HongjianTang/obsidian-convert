@@ -6,6 +6,13 @@ import { AttachmentHandler } from '../../infrastructure/attachment/AttachmentHan
 import { StreamingConverter, StreamConversionOptions } from './StreamingConverter';
 import { WorkerPool, WorkerTask, WorkerResult } from '../worker/WorkerPool';
 import { IncrementalConverter, ConversionState, FileConversionState, IncrementalOptions } from './IncrementalConverter';
+import {
+  TransformerRegistry,
+  Transformer,
+  TransformContext,
+  BuiltInTransformerName,
+  compilePattern,
+} from '../../domain/transformer';
 
 /**
  * Result of converting a single file
@@ -83,6 +90,7 @@ export class EnhancedConverter {
   private readonly calloutConverter: CalloutConverter;
   private readonly frontmatterProcessor: FrontmatterProcessor;
   private readonly streamingConverter: StreamingConverter;
+  private readonly transformerRegistry: TransformerRegistry;
   private readonly verbose: boolean;
   private readonly outputFormat: 'markdown' | 'mdx' | 'fumadocs';
   private readonly brokenLinks: string[] = [];
@@ -158,6 +166,69 @@ export class EnhancedConverter {
         watchDebounce: this.incrementalConfig.watchDebounce,
       });
     }
+
+    // Initialize transformer registry
+    this.transformerRegistry = new TransformerRegistry();
+
+    // Load transformer configuration if present
+    if (this.config.transformer) {
+      this.initializeTransformers(this.config.transformer);
+    }
+  }
+
+  /**
+   * Initialize transformer registry from configuration
+   */
+  private initializeTransformers(transformerConfig: NonNullable<Config['transformer']>): void {
+    // Set error isolation
+    if (transformerConfig.errorIsolation !== undefined) {
+      this.transformerRegistry.setErrorIsolation(transformerConfig.errorIsolation);
+    }
+
+    // Configure built-in transformers
+    if (transformerConfig.builtIn) {
+      for (const [name, config] of Object.entries(transformerConfig.builtIn)) {
+        this.transformerRegistry.configureBuiltIn(name as BuiltInTransformerName, config);
+      }
+    }
+
+    // Register custom transformers
+    if (transformerConfig.custom) {
+      for (const customTransformer of transformerConfig.custom) {
+        try {
+          // Create the transform function from the string code
+          // Note: In production, you'd want to use a sandboxed evaluation
+          const transformFn = new Function(
+            'match',
+            'context',
+            `return ${customTransformer.transform}(match, context);`
+          ) as Transformer['transform'];
+
+          const transformer: Transformer = {
+            name: customTransformer.name,
+            pattern: compilePattern(customTransformer.pattern),
+            transform: transformFn,
+            priority: customTransformer.priority ?? transformerConfig.defaultPriority ?? 0,
+            enabled: customTransformer.enabled !== false,
+            description: customTransformer.description,
+          };
+
+          this.transformerRegistry.register(transformer);
+        } catch (error) {
+          // Log error but don't fail initialization
+          if (this.verbose) {
+            console.warn(`Failed to register transformer ${customTransformer.name}:`, error);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Get the transformer registry for external access
+   */
+  getTransformerRegistry(): TransformerRegistry {
+    return this.transformerRegistry;
   }
 
   /**
@@ -264,6 +335,25 @@ export class EnhancedConverter {
 
       const result = await this.streamingConverter.convertFileStream(filePath, options);
 
+      // Execute custom transformers if content was successfully processed
+      let transformedContent = result.content;
+      if (result.success && this.transformerRegistry.getEnabledCount() > 0) {
+        const transformContext: TransformContext = {
+          fullContent: transformedContent,
+          filePath,
+          sourceRoot,
+        };
+
+        const transformResult = this.transformerRegistry.execute(transformedContent, transformContext);
+        transformedContent = transformResult.content;
+
+        if (transformResult.errors.length > 0 && this.verbose) {
+          for (const err of transformResult.errors) {
+            console.warn(`Transformer error in ${filePath}: ${err.message}`);
+          }
+        }
+      }
+
       // Calculate output path
       const relativePath = path.relative(sourceRoot, filePath);
       let outputPath = path.resolve(this.config.outputDir, relativePath);
@@ -276,7 +366,7 @@ export class EnhancedConverter {
       // Write output
       if (!this.options.dryRun) {
         await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-        await fs.promises.writeFile(outputPath, result.content, 'utf-8');
+        await fs.promises.writeFile(outputPath, transformedContent, 'utf-8');
       }
 
       this.log(`Converted (stream): ${relativePath}`);
@@ -574,6 +664,25 @@ export class EnhancedConverter {
         format: this.outputFormat === 'mdx' ? 'mdx' :
                 this.outputFormat === 'fumadocs' ? 'fumadocs' : 'markdown',
       });
+
+      // 5. Execute custom transformers
+      if (this.transformerRegistry.getEnabledCount() > 0) {
+        const transformContext: TransformContext = {
+          fullContent: content,
+          filePath,
+          sourceRoot,
+        };
+
+        const transformResult = this.transformerRegistry.execute(content, transformContext);
+        content = transformResult.content;
+
+        // Log transformer errors if any
+        if (transformResult.errors.length > 0 && this.verbose) {
+          for (const err of transformResult.errors) {
+            console.warn(`Transformer error in ${filePath}: ${err.message}`);
+          }
+        }
+      }
 
       // Calculate output path
       const relativePath = path.relative(sourceRoot, filePath);

@@ -1,4 +1,5 @@
 import { ConflictStrategy } from '../../domain/link';
+import { TransformerConfig } from '../../domain/transformer';
 
 /**
  * Source folder configuration
@@ -80,6 +81,8 @@ export interface Config {
   worker?: WorkerConfig;
   /** Incremental conversion configuration */
   incremental?: IncrementalConfig;
+  /** Custom transformer configuration */
+  transformer?: TransformerConfig;
 }
 
 /**
