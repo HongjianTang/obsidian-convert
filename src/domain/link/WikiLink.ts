@@ -1,3 +1,5 @@
+import type { LinkResolver, LinkResolutionResult } from './LinkResolver';
+
 /**
  * WikiLink value object representing Obsidian [[link]] syntax
  */
@@ -45,6 +47,17 @@ export class WikiLink {
     }
 
     return new WikiLink(target, displayText, heading, isEmbed);
+  }
+
+  /**
+   * Resolve this wiki link's target to a file path using the provided resolver
+   * @param resolver - The LinkResolver instance
+   * @param currentFilePath - Path to the current file containing this link
+   * @param sourceRoot - Root source directory
+   * @returns The resolution result
+   */
+  resolvePath(resolver: LinkResolver, currentFilePath: string, sourceRoot: string): LinkResolutionResult {
+    return resolver.resolve(this.target, currentFilePath, sourceRoot);
   }
 
   /**
