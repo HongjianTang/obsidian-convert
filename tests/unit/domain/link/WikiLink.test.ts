@@ -133,6 +133,19 @@ describe('WikiLink', () => {
       expect(link!.toMarkdown('/notes/MyNote.md')).toBe('[Custom Display](/notes/MyNote.md)');
     });
 
+    it('should convert wiki link with display text containing spaces', () => {
+      const link = WikiLink.parse('[[MyNote|Display Name With Spaces]]');
+      expect(link!.target).toBe('MyNote');
+      expect(link!.displayText).toBe('Display Name With Spaces');
+      expect(link!.toMarkdown('/notes/MyNote.md')).toBe('[Display Name With Spaces](/notes/MyNote.md)');
+    });
+
+    it('should handle display text with multiple spaces', () => {
+      const link = WikiLink.parse('[[note|  Leading and Trailing  Spaces  ]]');
+      expect(link!.displayText).toBe('  Leading and Trailing  Spaces  ');
+      expect(link!.toMarkdown('/path')).toBe('[  Leading and Trailing  Spaces  ](/path)');
+    });
+
     it('should convert embed wiki link to markdown image', () => {
       const link = WikiLink.parse('![[image.png]]');
       expect(link!.toMarkdown('/attachments/image.png')).toBe('![image.png](/attachments/image.png)');
