@@ -3,13 +3,25 @@ import { LinkResolver } from './LinkResolver';
 import { SourceLocation } from '../error';
 
 /**
+ * Configuration for broken link target strategies
+ */
+export interface BrokenLinkTargetConfig {
+  /** Strategy type: 'url', 'page', or 'grayed' */
+  strategy: 'url' | 'page' | 'grayed';
+  /** The target URL or page path (use {target} as placeholder for the original link target) */
+  target: string;
+}
+
+/**
  * Options for WikiLink processor
  */
 export interface WikiLinkProcessorOptions {
   /** How to handle broken links */
-  brokenLinkHandling: 'keep' | 'remove' | 'placeholder';
+  brokenLinkHandling: 'keep' | 'remove' | 'placeholder' | 'brokenLinkTarget';
   /** Placeholder text for broken links (use {target} for the link target) */
   brokenLinkPlaceholder?: string;
+  /** Configuration for brokenLinkTarget strategy */
+  brokenLinkTarget?: BrokenLinkTargetConfig;
   /** Whether to add .md extension to links */
   addMdExtension?: boolean;
   /** Whether to track source locations for errors (default: false) */
@@ -135,9 +147,39 @@ export class WikiLinkProcessor {
       case 'placeholder':
         const placeholder = this.options.brokenLinkPlaceholder || '[{target}]';
         return placeholder.replace('{target}', wikiLink.displayText || wikiLink.target);
+      case 'brokenLinkTarget':
+        return this.handleBrokenLinkTarget(wikiLink);
       case 'keep':
       default:
         // Keep the original WikiLink format so users can identify broken links
+        return wikiLink.toOriginal();
+    }
+  }
+
+  /**
+   * Handle broken link with brokenLinkTarget strategy
+   */
+  private handleBrokenLinkTarget(wikiLink: WikiLink): string {
+    const config = this.options.brokenLinkTarget;
+    if (!config) {
+      // Fallback to keep if no config provided
+      return wikiLink.toOriginal();
+    }
+
+    const displayText = wikiLink.displayText || wikiLink.target;
+    // Replace {target} template variable with encoded target
+    const encodedTarget = encodeURIComponent(wikiLink.target);
+    const targetUrl = config.target.replace('{target}', encodedTarget);
+
+    switch (config.strategy) {
+      case 'url':
+      case 'page':
+        // Generate a clickable link pointing to the configured URL/page
+        return `[${displayText}](${targetUrl})`;
+      case 'grayed':
+        // Generate a gray unclickable link using a span with CSS class
+        return `<span class="broken-link" data-target="${encodedTarget}">${displayText}</span>`;
+      default:
         return wikiLink.toOriginal();
     }
   }

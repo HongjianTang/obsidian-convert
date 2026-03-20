@@ -152,4 +152,231 @@ describe('WikiLinkProcessor', () => {
       expect(result.content).toContain('#' + encodeURIComponent('中文标题'));
     });
   });
+
+  describe('brokenLinkTarget strategy', () => {
+    describe('url strategy', () => {
+      it('should generate link pointing to fixed URL', () => {
+        const urlProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'url',
+            target: '/404',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = urlProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[nonexistent](/404)');
+        expect(result.brokenCount).toBe(1);
+      });
+
+      it('should replace {target} template variable', () => {
+        const urlProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'url',
+            target: '/missing?page={target}',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[missing-note]]';
+        const result = urlProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[missing-note](/missing?page=missing-note)');
+      });
+
+      it('should URL encode target in template variable', () => {
+        const urlProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'url',
+            target: '/missing?ref={target}',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[中文笔记]]';
+        const result = urlProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain(encodeURIComponent('中文笔记'));
+      });
+
+      it('should use display text if provided', () => {
+        const urlProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'url',
+            target: '/404',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent|Custom Text]]';
+        const result = urlProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[Custom Text](/404)');
+      });
+    });
+
+    describe('page strategy', () => {
+      it('should generate link pointing to explanation page', () => {
+        const pageProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'page',
+            target: '/pages/broken-link',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = pageProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[nonexistent](/pages/broken-link)');
+        expect(result.brokenCount).toBe(1);
+      });
+
+      it('should support {target} template in page strategy', () => {
+        const pageProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'page',
+            target: '/pages/broken-link?target={target}',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[missing-page]]';
+        const result = pageProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[missing-page](/pages/broken-link?target=missing-page)');
+      });
+    });
+
+    describe('grayed strategy', () => {
+      it('should generate gray span with broken-link class', () => {
+        const grayedProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'grayed',
+            target: '/pages/broken-link',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = grayedProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('<span class="broken-link" data-target="nonexistent">nonexistent</span>');
+        expect(result.brokenCount).toBe(1);
+      });
+
+      it('should URL encode target in data-target attribute', () => {
+        const grayedProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'grayed',
+            target: '/pages/broken-link',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[中文笔记]]';
+        const result = grayedProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain(`data-target="${encodeURIComponent('中文笔记')}"`);
+      });
+
+      it('should use display text if provided', () => {
+        const grayedProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'grayed',
+            target: '/pages/broken-link',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent|Custom Display]]';
+        const result = grayedProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('<span class="broken-link" data-target="nonexistent">Custom Display</span>');
+      });
+
+      it('should ignore target URL for grayed strategy', () => {
+        const grayedProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          brokenLinkTarget: {
+            strategy: 'grayed',
+            target: '/unused-url',
+          },
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = grayedProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        // Should not include the URL, just the span
+        expect(result.content).toContain('<span class="broken-link"');
+        expect(result.content).not.toContain('/unused-url');
+      });
+    });
+
+    describe('backward compatibility', () => {
+      it('should fallback to keep when brokenLinkTarget config is missing', () => {
+        const fallbackProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'brokenLinkTarget',
+          // No brokenLinkTarget provided - should fallback to keep
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = fallbackProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        // Should keep the original WikiLink format
+        expect(result.content).toContain('[[nonexistent]]');
+      });
+
+      it('should still work with existing keep option', () => {
+        const keepProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'keep',
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = keepProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[[nonexistent]]');
+      });
+
+      it('should still work with existing remove option', () => {
+        const removeProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'remove',
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = removeProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).not.toContain('nonexistent');
+        expect(result.content).not.toContain('[[');
+      });
+
+      it('should still work with existing placeholder option', () => {
+        const placeholderProcessor = new WikiLinkProcessor(resolver, {
+          brokenLinkHandling: 'placeholder',
+          brokenLinkPlaceholder: '[{target}]',
+          addMdExtension: true,
+        });
+
+        const content = 'Link to [[nonexistent]]';
+        const result = placeholderProcessor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+        expect(result.content).toContain('[nonexistent]');
+      });
+    });
+  });
 });
