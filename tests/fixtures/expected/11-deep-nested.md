@@ -1,3 +1,6 @@
+---
+title: 11 Deep Nested
+---
 # Deep Nested Note
 
 This is a deeply nested note.
