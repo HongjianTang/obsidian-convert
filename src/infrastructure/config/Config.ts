@@ -35,6 +35,10 @@ export interface StreamingConfig {
   highWaterMark?: number;
   /** Max file size to buffer entirely before streaming (default: 10MB) */
   maxBufferSize?: number;
+  /** Maximum memory usage threshold in bytes (default: 500MB) */
+  maxMemory?: number;
+  /** Memory warning threshold as percentage of maxMemory (default: 80) */
+  memoryWarningThreshold?: number;
 }
 
 /**
@@ -49,6 +53,8 @@ export interface WorkerConfig {
   taskTimeout?: number;
   /** Enable worker crash recovery (default: true) */
   enableRecovery?: boolean;
+  /** Enable graceful degradation when workers unavailable (default: true) */
+  gracefulDegradation?: boolean;
 }
 
 /**

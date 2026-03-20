@@ -316,5 +316,224 @@ describe('LinkResolver', () => {
       trackingResolver.clearBrokenLinks();
       expect(trackingResolver.getBrokenLinks()).toHaveLength(0);
     });
+
+    it('should track broken links with location info', async () => {
+      const trackingResolver = new LinkResolver({ caseInsensitive: true, warnOnBroken: true });
+      fs.writeFileSync(path.join(tempDir, 'existing.md'), '');
+
+      await trackingResolver.buildIndex([tempDir]);
+
+      trackingResolver.resolve('nonexistent', path.join(tempDir, 'test.md'), tempDir, { line: 5, column: 10 });
+
+      const enhancedLinks = trackingResolver.getEnhancedBrokenLinks();
+      expect(enhancedLinks).toHaveLength(1);
+      expect(enhancedLinks[0].target).toBe('nonexistent');
+      expect(enhancedLinks[0].location.line).toBe(5);
+      expect(enhancedLinks[0].location.column).toBe(10);
+    });
+
+    it('should provide error reporter for broken links', async () => {
+      const trackingResolver = new LinkResolver({ caseInsensitive: true, warnOnBroken: true, verbose: true });
+      fs.writeFileSync(path.join(tempDir, 'existing.md'), '');
+
+      await trackingResolver.buildIndex([tempDir]);
+
+      trackingResolver.resolve('nonexistent', path.join(tempDir, 'test.md'), tempDir, { line: 5, column: 10 });
+
+      const reporter = trackingResolver.getErrorReporter();
+      const errors = reporter.getErrors();
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].code).toBe('LINK_RESOLUTION_ERROR');
+      expect(errors[0].location?.line).toBe(5);
+    });
+  });
+
+  describe('fuzzy matching', () => {
+    beforeEach(async () => {
+      // Create test files with similar names
+      fs.writeFileSync(path.join(tempDir, 'introduction.md'), '');
+      fs.mkdirSync(path.join(tempDir, 'notes'));
+      fs.writeFileSync(path.join(tempDir, 'notes', 'introduction.md'), '');
+      fs.mkdirSync(path.join(tempDir, 'sub'));
+      fs.writeFileSync(path.join(tempDir, 'sub', 'note.md'), '');
+    });
+
+    it('should not use fuzzy match by default', async () => {
+      const resolver = new LinkResolver({ caseInsensitive: true });
+      await resolver.buildIndex([tempDir]);
+
+      // 'intruction' does NOT exist, 'introduction' does - without fuzzy, this should fail
+      const result = resolver.resolve('intruction', path.join(tempDir, 'test.md'), tempDir);
+      expect(result.found).toBe(false);
+      expect(result.isBroken).toBe(true);
+    });
+
+    it('should find fuzzy match when enabled', async () => {
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 3,
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // 'introdution' (missing 'c') is distance 1 from 'introduction'
+      // introdution vs introduction: missing 'c' at position 8
+      const result = fuzzyResolver.resolve('introdution', path.join(tempDir, 'test.md'), tempDir);
+      expect(result.found).toBe(true);
+      expect(result.hasFuzzyMatch).toBe(true);
+      expect(result.fuzzyMatchDistance).toBe(1);
+      expect(result.file?.basename).toBe('introduction');
+    });
+
+    it('should prefer nearest file when multiple basename matches exist', async () => {
+      const resolver = new LinkResolver({
+        caseInsensitive: true,
+        conflictStrategy: 'nearest',
+      });
+      await resolver.buildIndex([tempDir]);
+
+      // 'introduction' exists in both root and notes folder
+      // From notes/test.md, the nearest 'introduction' is notes/introduction.md
+      const result = resolver.resolve('introduction', path.join(tempDir, 'notes', 'test.md'), tempDir);
+
+      expect(result.found).toBe(true);
+      // The nearest match should be notes/introduction.md
+      expect(result.file?.relativePath).toBe('notes/introduction.md');
+    });
+
+    it('should not match if distance exceeds max', async () => {
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 1, // Only allow distance of 1
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // 'intruction' vs 'introduction' is distance 1, should match
+      // But 'introdction' vs 'introduction' is distance 2 (substitution + extra char)
+      // Actually let's use 'introductio' (missing n at end) - distance 1
+      const result = fuzzyResolver.resolve('introductio', path.join(tempDir, 'test.md'), tempDir);
+
+      expect(result.found).toBe(true);
+      expect(result.hasFuzzyMatch).toBe(true);
+      expect(result.fuzzyMatchDistance).toBe(1);
+    });
+
+    it('should not match when distance exceeds max', async () => {
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 1, // Only allow distance of 1
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // 'intruction' vs 'introduction' is distance 2, exceeds max of 1
+      // introdction: i-n-t-r-o-d-c-t-i-o-n (11 chars, missing u, wrong order)
+      // introduction: i-n-t-r-o-d-u-c-t-i-o-n (12 chars)
+      // This is about 3+ edits, definitely > 1
+      const result = fuzzyResolver.resolve('intruction', path.join(tempDir, 'test.md'), tempDir);
+
+      expect(result.found).toBe(false);
+      expect(result.isBroken).toBe(true);
+    });
+
+    it('should warn when fuzzy match is used', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 3,
+        warnOnFuzzyMatch: true,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // 'introdution' doesn't exist but 'introduction' does (distance 1)
+      fuzzyResolver.resolve('introdution', path.join(tempDir, 'test.md'), tempDir);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('fuzzy match')
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('should not warn when warnOnFuzzyMatch is false', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 3,
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      fuzzyResolver.resolve('introdution', path.join(tempDir, 'test.md'), tempDir);
+
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+
+    it('should handle Chinese characters in fuzzy matching', async () => {
+      // Create files with similar Chinese names
+      fs.writeFileSync(path.join(tempDir, '知识库.md'), '');
+      fs.mkdirSync(path.join(tempDir, 'chinese'));
+      // '知诓库' (typo) does NOT exist as a file
+
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 3,
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // '知诓库' is 1 edit away from '知识库' (诓 vs 识)
+      const result = fuzzyResolver.resolve('知诓库', path.join(tempDir, 'chinese', 'test.md'), tempDir);
+
+      expect(result.found).toBe(true);
+      expect(result.hasFuzzyMatch).toBe(true);
+      expect(result.file?.basename).toBe('知识库');
+    });
+
+    it('should use exact match over fuzzy match when available', async () => {
+      fs.writeFileSync(path.join(tempDir, 'exact.md'), '');
+      fs.writeFileSync(path.join(tempDir, 'exactt.md'), '');
+
+      const fuzzyResolver = new LinkResolver({
+        caseInsensitive: true,
+        fuzzyMatch: true,
+        fuzzyMaxDistance: 3,
+        warnOnFuzzyMatch: false,
+      });
+      await fuzzyResolver.buildIndex([tempDir]);
+
+      // 'exact' should match exactly, not fuzzy to 'exactt'
+      const result = fuzzyResolver.resolve('exact', path.join(tempDir, 'test.md'), tempDir);
+
+      expect(result.found).toBe(true);
+      expect(result.hasFuzzyMatch).toBeUndefined();
+      expect(result.file?.basename).toBe('exact');
+    });
+
+    it('should prefer subdirectory file when resolving from same subdir', async () => {
+      // 'note.md' exists in 'sub/' directory
+      const resolver = new LinkResolver({
+        caseInsensitive: true,
+        conflictStrategy: 'nearest',
+      });
+      await resolver.buildIndex([tempDir]);
+
+      // From sub/test.md, resolve 'note' - should get sub/note.md
+      // (note.md doesn't exist in root, only in sub/)
+      const result = resolver.resolve('note', path.join(tempDir, 'sub', 'test.md'), tempDir);
+
+      expect(result.found).toBe(true);
+      expect(result.file?.relativePath).toBe('sub/note.md');
+    });
   });
 });
