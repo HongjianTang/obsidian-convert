@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { YamlConfigLoader, ConfigError, Config } from '../../../infrastructure/config';
 import { Converter, ConversionResult, MemoryMonitor, getGlobalMemoryMonitor } from '../../../application/convert';
+import { ErrorReporter, ErrorLevel } from '../../../domain/error';
 
 /**
  * Options for the convert command
@@ -114,7 +115,7 @@ export class ConvertCommand {
     } catch (error) {
       this.memoryMonitor?.stop();
       if (error instanceof ConfigError) {
-        console.error(`Configuration error: ${error.message}`);
+        this.printEnhancedError(error, this.options.verbose);
         return {
           success: false,
           errorType: 'config',
@@ -123,12 +124,53 @@ export class ConvertCommand {
       }
 
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Conversion error: ${errorMessage}`);
+      if (this.options.verbose && error instanceof Error && error.stack) {
+        console.error(`Conversion error: ${errorMessage}`);
+        console.error('Stack trace:');
+        console.error(error.stack);
+      } else {
+        console.error(`Conversion error: ${errorMessage}`);
+      }
       return {
         success: false,
         errorType: 'convert',
         errorMessage,
       };
+    }
+  }
+
+  /**
+   * Print enhanced error with context and suggestions
+   */
+  private printEnhancedError(error: ConfigError, verbose: boolean): void {
+    const reporter = new ErrorReporter(verbose);
+
+    // Create enhanced error from ConfigError
+    reporter.addError(
+      'CONFIG_ERROR',
+      error.message,
+      'ConfigError' as any,
+      ErrorLevel.FATAL,
+      {
+        location: error.location,
+        originalError: error,
+        suggestions: error.field ? [
+          { description: `Check the "${error.field}" field in your configuration` },
+        ] : [],
+      }
+    );
+
+    const options = {
+      verbose,
+      showContext: true,
+      contextSize: 2,
+    };
+
+    console.error('\n' + reporter.formatError(reporter.getErrors()[0], options));
+
+    if (verbose && error.stack) {
+      console.error('\nStack trace:');
+      console.error(error.stack);
     }
   }
 

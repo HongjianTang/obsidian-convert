@@ -316,6 +316,37 @@ describe('LinkResolver', () => {
       trackingResolver.clearBrokenLinks();
       expect(trackingResolver.getBrokenLinks()).toHaveLength(0);
     });
+
+    it('should track broken links with location info', async () => {
+      const trackingResolver = new LinkResolver({ caseInsensitive: true, warnOnBroken: true });
+      fs.writeFileSync(path.join(tempDir, 'existing.md'), '');
+
+      await trackingResolver.buildIndex([tempDir]);
+
+      trackingResolver.resolve('nonexistent', path.join(tempDir, 'test.md'), tempDir, { line: 5, column: 10 });
+
+      const enhancedLinks = trackingResolver.getEnhancedBrokenLinks();
+      expect(enhancedLinks).toHaveLength(1);
+      expect(enhancedLinks[0].target).toBe('nonexistent');
+      expect(enhancedLinks[0].location.line).toBe(5);
+      expect(enhancedLinks[0].location.column).toBe(10);
+    });
+
+    it('should provide error reporter for broken links', async () => {
+      const trackingResolver = new LinkResolver({ caseInsensitive: true, warnOnBroken: true, verbose: true });
+      fs.writeFileSync(path.join(tempDir, 'existing.md'), '');
+
+      await trackingResolver.buildIndex([tempDir]);
+
+      trackingResolver.resolve('nonexistent', path.join(tempDir, 'test.md'), tempDir, { line: 5, column: 10 });
+
+      const reporter = trackingResolver.getErrorReporter();
+      const errors = reporter.getErrors();
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].code).toBe('LINK_RESOLUTION_ERROR');
+      expect(errors[0].location?.line).toBe(5);
+    });
   });
 
   describe('fuzzy matching', () => {
