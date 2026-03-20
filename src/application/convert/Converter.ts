@@ -119,7 +119,9 @@ export class Converter {
     this.calloutConverter = new CalloutConverter();
 
     // Initialize frontmatter processor
-    this.frontmatterProcessor = new FrontmatterProcessor();
+    this.frontmatterProcessor = new FrontmatterProcessor({
+      autoTitle: config.autoTitle,
+    });
   }
 
   /**
@@ -252,7 +254,7 @@ export class Converter {
       // 1. Process frontmatter
       content = this.frontmatterProcessor.processContent(content, {
         convertWikiLinks: true,
-      });
+      }, filePath);
 
       // 2. Process WikiLinks (note-to-note links)
       const wikiLinkResult = this.wikiLinkProcessor.process(content, filePath, sourceRoot);

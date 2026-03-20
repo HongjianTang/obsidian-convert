@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as yaml from 'yaml';
 
 /**
@@ -40,6 +41,8 @@ export interface FrontmatterProcessorOptions {
   fieldMappings?: Record<string, string>;
   /** Fields to remove from output */
   removeFields?: string[];
+  /** Auto-generate title from filename if not present */
+  autoTitle?: boolean;
 }
 
 /**
@@ -64,6 +67,11 @@ export interface FrontmatterResult {
 export class FrontmatterProcessor {
   private static readonly FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
   private static readonly EMPTY_FRONTMATTER_REGEX = /^---\r?\n---\r?\n/;
+  private readonly autoTitle: boolean;
+
+  constructor(options: FrontmatterProcessorOptions = {}) {
+    this.autoTitle = options.autoTitle ?? true;
+  }
 
   /**
    * Parse frontmatter from content
@@ -181,15 +189,45 @@ export class FrontmatterProcessor {
   /**
    * Process content: parse frontmatter and convert it
    */
-  processContent(content: string, options: FrontmatterProcessorOptions = {}): string {
+  processContent(content: string, options: FrontmatterProcessorOptions = {}, filePath?: string): string {
     const result = this.parse(content);
 
-    if (!result.hasFrontmatter) {
+    // Handle auto-title generation - use option if provided, otherwise fall back to instance setting
+    const shouldAutoTitle = options.autoTitle !== undefined ? options.autoTitle : this.autoTitle;
+    if (shouldAutoTitle && filePath && !result.frontmatter.title) {
+      const title = this.generateTitleFromFilePath(filePath);
+      result.frontmatter.title = title;
+    }
+
+    if (!result.hasFrontmatter && !result.frontmatter.title) {
       return content;
     }
 
     const convertedFrontmatter = this.convert(result.frontmatter, options);
+
+    // If no frontmatter existed but we have a title to add
+    if (!result.hasFrontmatter && result.frontmatter.title) {
+      return convertedFrontmatter + content;
+    }
+
     return convertedFrontmatter + content.slice(result.end);
+  }
+
+  /**
+   * Generate a title from file path
+   * Converts "my_note.md" to "My Note", "hello-world.md" to "Hello World"
+   */
+  generateTitleFromFilePath(filePath: string): string {
+    const basename = path.basename(filePath, path.extname(filePath));
+    // Replace underscores, hyphens, and other separators with spaces
+    // Then capitalize first letter of each word
+    return basename
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   }
 
   /**

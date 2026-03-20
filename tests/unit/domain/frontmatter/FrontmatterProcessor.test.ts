@@ -7,6 +7,126 @@ describe('FrontmatterProcessor', () => {
     processor = new FrontmatterProcessor();
   });
 
+  describe('constructor', () => {
+    it('should default autoTitle to true', () => {
+      const defaultProcessor = new FrontmatterProcessor();
+      const content = '# No frontmatter\n\nContent';
+      const result = defaultProcessor.processContent(content, {}, '/path/to/my_note.md');
+      expect(result).toContain('title: My Note');
+    });
+
+    it('should accept autoTitle: false in constructor', () => {
+      const disabledProcessor = new FrontmatterProcessor({ autoTitle: false });
+      const content = '# No frontmatter\n\nContent';
+      const result = disabledProcessor.processContent(content, {}, '/path/to/my_note.md');
+      expect(result).not.toContain('title:');
+    });
+  });
+
+  describe('auto-title generation', () => {
+    // AC1: File without frontmatter - auto-generate frontmatter with title
+    it('AC1: should auto-generate frontmatter with title when file has no frontmatter', () => {
+      const content = '# Hello World\n\nContent here';
+      const result = processor.processContent(content, {}, '/path/to/my_note.md');
+
+      expect(result).toMatch(/^---\ntitle: My Note\n---\n/);
+      expect(result).toContain('# Hello World');
+    });
+
+    // AC2: File with frontmatter but no title - add title
+    it('AC2: should add title to existing frontmatter when title is missing', () => {
+      const content = `---
+tags:
+  - note
+---
+# Content`;
+      const result = processor.processContent(content, {}, '/path/to/my_note.md');
+
+      expect(result).toContain('title: My Note');
+      expect(result).toContain('tags:');
+    });
+
+    // AC3: File with title - keep original title
+    it('AC3: should preserve existing title without modification', () => {
+      const content = `---
+title: Existing Title
+tags:
+  - note
+---
+# Content`;
+      const result = processor.processContent(content, {}, '/path/to/my_note.md');
+
+      expect(result).toContain('title: Existing Title');
+      expect(result).not.toContain('title: My Note');
+    });
+
+    // AC4: Filename conversion (underscores, spaces, hyphens)
+    it('AC4: should convert underscores to spaces in filename for title', () => {
+      const content = '# Content';
+      const result = processor.processContent(content, {}, '/path/to/my_note.md');
+      expect(result).toContain('title: My Note');
+    });
+
+    it('AC4: should convert hyphens to spaces in filename for title', () => {
+      const content = '# Content';
+      const result = processor.processContent(content, {}, '/path/to/hello-world.md');
+      expect(result).toContain('title: Hello World');
+    });
+
+    it('AC4: should handle multiple underscores and spaces', () => {
+      const content = '# Content';
+      const result = processor.processContent(content, {}, '/path/to/my__note___file.md');
+      expect(result).toContain('title: My Note File');
+    });
+
+    it('AC4: should capitalize first letter of each word', () => {
+      const content = '# Content';
+      const result = processor.processContent(content, {}, '/path/to/lowercase-note.md');
+      expect(result).toContain('title: Lowercase Note');
+    });
+
+    // AC5: Config can disable the feature via processContent options
+    it('AC5: should respect autoTitle: false in processContent options', () => {
+      const content = '# No frontmatter\n\nContent';
+      const result = processor.processContent(content, { autoTitle: false }, '/path/to/my_note.md');
+      expect(result).not.toContain('title:');
+    });
+
+    it('AC5: should generate title when autoTitle: true even if constructor is false', () => {
+      const disabledProcessor = new FrontmatterProcessor({ autoTitle: false });
+      const content = '# No frontmatter\n\nContent';
+      const result = disabledProcessor.processContent(content, { autoTitle: true }, '/path/to/my_note.md');
+      expect(result).toContain('title: My Note');
+    });
+  });
+
+  describe('generateTitleFromFilePath', () => {
+    it('should convert underscores to spaces', () => {
+      const title = processor.generateTitleFromFilePath('/path/to/my_note.md');
+      expect(title).toBe('My Note');
+    });
+
+    it('should convert hyphens to spaces', () => {
+      const title = processor.generateTitleFromFilePath('/path/to/hello-world.md');
+      expect(title).toBe('Hello World');
+    });
+
+    it('should handle multiple separators', () => {
+      const title = processor.generateTitleFromFilePath('my__note---file.md');
+      expect(title).toBe('My Note File');
+    });
+
+    it('should trim whitespace', () => {
+      const title = processor.generateTitleFromFilePath('  my note  ');
+      expect(title).toBe('My Note');
+    });
+
+    it('should capitalize first letter of each word', () => {
+      const title = processor.generateTitleFromFilePath('hello world');
+      expect(title).toBe('Hello World');
+    });
+  });
+
   describe('parse', () => {
     it('should parse basic frontmatter', () => {
       const content = `---

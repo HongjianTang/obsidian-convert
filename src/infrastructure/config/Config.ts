@@ -89,6 +89,8 @@ export interface Config {
   incremental?: IncrementalConfig;
   /** Custom transformer configuration */
   transformer?: TransformerConfig;
+  /** Auto-generate title from filename if not present in frontmatter (default: true) */
+  autoTitle?: boolean;
 }
 
 /**
