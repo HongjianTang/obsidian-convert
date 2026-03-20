@@ -11,6 +11,7 @@ const EXIT_CONVERT_ERROR = 3;
 
 interface ParsedOptions {
   config: string;
+  input?: string;
   output?: string;
   dryRun: boolean;
   verbose: boolean;
@@ -28,6 +29,10 @@ function parseCliArgs(): ParsedOptions {
         type: 'string',
         short: 'c',
         default: './obsidian-convert.yaml',
+      },
+      input: {
+        type: 'string',
+        short: 'i',
       },
       output: {
         type: 'string',
@@ -68,6 +73,7 @@ function parseCliArgs(): ParsedOptions {
 
   return {
     config: values.config as string,
+    input: values.input as string | undefined,
     output: values.output as string | undefined,
     dryRun: values['dry-run'] as boolean,
     verbose: values.verbose as boolean,
@@ -92,6 +98,7 @@ async function main(): Promise<number> {
   // Run conversion
   const command = new ConvertCommand({
     configPath: options.config,
+    input: options.input,
     outputDir: options.output,
     dryRun: options.dryRun,
     verbose: options.verbose,

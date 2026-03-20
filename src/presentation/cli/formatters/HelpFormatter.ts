@@ -7,29 +7,44 @@ export class HelpFormatter {
 
 USAGE:
   obsidian-convert [options]
+  obsidian-convert convert [options]
 
 OPTIONS:
+  -i, --input <path>     Source file or directory path (can be used without config file)
   -c, --config <path>   Path to config file (default: ./obsidian-convert.yaml)
   -o, --output <dir>    Output directory (overrides config)
+  -f, --format <fmt>    Output format: markdown, mdx, fumadocs (default: markdown)
   --dry-run             Preview conversion without writing files
   -v, --verbose         Show detailed output
-  --report <format>     Generate report (json or html)
+  --broken-links <action> How to handle broken links: keep, remove, placeholder (default: keep)
+  --report <format>     Generate report: json or html
   --report-output <path> Output path for report file
   -h, --help            Show this help message
 
 EXIT CODES:
   0   Success
   1   Configuration error
-  2   Source folder error
+  2   Source path error
   3   Conversion error
 
 EXAMPLES:
-  obsidian-convert
+  # Use config file
   obsidian-convert -c ./my-config.yaml
-  obsidian-convert -o ./output --verbose
-  obsidian-convert --dry-run
-  obsidian-convert --report json
-  obsidian-convert --report html --report-output ./report.html
+
+  # Convert vault directory directly (no config needed)
+  obsidian-convert --input ./vault --output ./docs
+
+  # Single file conversion
+  obsidian-convert --input ./notes/intro.md --output ./docs
+
+  # With additional options
+  obsidian-convert -i ./vault -o ./docs -f mdx --verbose
+
+  # Preview mode
+  obsidian-convert -i ./vault -o ./docs --dry-run
+
+  # Generate report
+  obsidian-convert -i ./vault -o ./docs --report json --report-output ./report.json
 
 For more information, see: https://github.com/limit/obsidian-convert
 `;
