@@ -5,6 +5,7 @@ import { Converter, ConversionResult, MemoryMonitor, getGlobalMemoryMonitor } fr
 import { ReportGenerator } from '../../../infrastructure/report';
 import { ReportOptions } from '../../../api/report-types';
 import { ErrorReporter, ErrorLevel } from '../../../domain/error';
+import { ProgressTracker } from '../ProgressTracker';
 
 /**
  * Options for the convert command
@@ -20,6 +21,8 @@ export interface ConvertCommandOptions {
   dryRun: boolean;
   /** Verbose logging */
   verbose: boolean;
+  /** Enable interactive mode with progress bars */
+  interactive: boolean;
   /** Output format */
   outputFormat?: 'markdown' | 'mdx' | 'fumadocs';
   /** How to handle broken links */
@@ -50,6 +53,7 @@ export interface ConvertCommandResult {
 export class ConvertCommand {
   private readonly configLoader = new YamlConfigLoader();
   private memoryMonitor?: MemoryMonitor;
+  private progressTracker?: ProgressTracker;
   private startTime = 0;
   private processedFiles = 0;
   private totalFiles = 0;
@@ -83,7 +87,7 @@ export class ConvertCommand {
         outputFormat: this.options.outputFormat,
         brokenLinkHandling: this.options.brokenLinkHandling,
         warnOnBroken: this.options.verbose,
-        onProgress: () => this.incrementProcessedFiles(),
+        onProgress: (filePath) => this.incrementProcessedFiles(filePath),
       });
 
       console.log('Starting conversion...');
@@ -96,18 +100,21 @@ export class ConvertCommand {
       this.processedFiles = 0;
       this.totalFiles = await this.countFiles(config);
 
+      // Initialize progress tracker
+      this.progressTracker = new ProgressTracker({
+        totalFiles: this.totalFiles,
+        interactive: this.options.interactive,
+        prefixText: 'Converting',
+      });
+      this.progressTracker.start();
+
       // Start memory monitoring
       this.memoryMonitor?.start();
 
-      // Set up progress display
-      const progressInterval = setInterval(() => {
-        this.displayProgress();
-      }, 500);
-
       const result = await converter.convert();
 
-      // Clear progress interval
-      clearInterval(progressInterval);
+      // Stop progress tracker
+      this.progressTracker.stop();
 
       // Stop memory monitoring
       this.memoryMonitor?.stop();
@@ -243,39 +250,23 @@ export class ConvertCommand {
   }
 
   /**
-   * Display progress information
+   * Display progress information using ProgressTracker
    */
   private displayProgress(): void {
-    if (this.totalFiles === 0 || !this.startTime) return;
+    if (!this.progressTracker || this.totalFiles === 0 || !this.startTime) return;
 
-    const now = Date.now();
-    const elapsed = now - this.startTime;
-    const filesPerSecond = this.processedFiles / (elapsed / 1000);
-    const remainingFiles = this.totalFiles - this.processedFiles;
-    const estimatedRemainingSeconds = filesPerSecond > 0 ? remainingFiles / filesPerSecond : 0;
-
-    const percent = ((this.processedFiles / this.totalFiles) * 100).toFixed(1);
-    const eta = this.formatDuration(estimatedRemainingSeconds * 1000);
-    const elapsedStr = this.formatDuration(elapsed);
-
-    // Build progress bar
-    const barLength = 30;
-    const filledLength = Math.round((this.processedFiles / this.totalFiles) * barLength);
-    const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
-
-    const memoryInfo = this.memoryMonitor ? ` | ${this.memoryMonitor.getSummary()}` : '';
-
-    // Use carriage return to overwrite the line
-    process.stdout.write(`\r[${bar}] ${percent}% | ${this.processedFiles}/${this.totalFiles} files | ETA: ${eta} | Elapsed: ${elapsedStr}${memoryInfo}  `);
-
-    this.lastProgressUpdate = now;
+    this.progressTracker.printTextProgress();
+    this.lastProgressUpdate = Date.now();
   }
 
   /**
    * Update processed files count (to be called by converter)
    */
-  incrementProcessedFiles(): void {
+  incrementProcessedFiles(filePath?: string): void {
     this.processedFiles++;
+    if (this.progressTracker && filePath) {
+      this.progressTracker.update(filePath, true);
+    }
   }
 
   /**

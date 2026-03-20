@@ -16,6 +16,7 @@ interface ParsedOptions {
   dryRun: boolean;
   verbose: boolean;
   help: boolean;
+  interactive: boolean;
   format: 'markdown' | 'mdx' | 'fumadocs';
   brokenLinks: 'keep' | 'remove' | 'placeholder';
   report?: 'json' | 'html';
@@ -52,6 +53,10 @@ function parseCliArgs(): ParsedOptions {
         short: 'h',
         default: false,
       },
+      'no-interactive': {
+        type: 'boolean',
+        default: false,
+      },
       format: {
         type: 'string',
         short: 'f',
@@ -78,6 +83,7 @@ function parseCliArgs(): ParsedOptions {
     dryRun: values['dry-run'] as boolean,
     verbose: values.verbose as boolean,
     help: values.help as boolean,
+    interactive: !values['no-interactive'] as boolean,
     format: values.format as 'markdown' | 'mdx' | 'fumadocs',
     brokenLinks: values['broken-links'] as 'keep' | 'remove' | 'placeholder',
     report: values.report as 'json' | 'html' | undefined,
@@ -102,6 +108,7 @@ async function main(): Promise<number> {
     outputDir: options.output,
     dryRun: options.dryRun,
     verbose: options.verbose,
+    interactive: options.interactive,
     outputFormat: options.format,
     brokenLinkHandling: options.brokenLinks,
     report: options.report,

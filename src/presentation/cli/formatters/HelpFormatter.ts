@@ -16,6 +16,7 @@ OPTIONS:
   -f, --format <fmt>    Output format: markdown, mdx, fumadocs (default: markdown)
   --dry-run             Preview conversion without writing files
   -v, --verbose         Show detailed output
+  --no-interactive     Disable interactive progress bars and colors
   --broken-links <action> How to handle broken links: keep, remove, placeholder (default: keep)
   --report <format>     Generate report: json or html
   --report-output <path> Output path for report file
@@ -42,6 +43,9 @@ EXAMPLES:
 
   # Preview mode
   obsidian-convert -i ./vault -o ./docs --dry-run
+
+  # Non-interactive mode (no progress bars)
+  obsidian-convert -i ./vault -o ./docs --no-interactive
 
   # Generate report
   obsidian-convert -i ./vault -o ./docs --report json --report-output ./report.json

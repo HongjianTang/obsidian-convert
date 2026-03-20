@@ -62,8 +62,8 @@ export interface ConverterOptions {
   brokenLinkHandling?: 'keep' | 'remove' | 'placeholder';
   /** Warn on broken links */
   warnOnBroken?: boolean;
-  /** Callback invoked after each file is processed */
-  onProgress?: () => void;
+  /** Callback invoked after each file is processed, receives the file path */
+  onProgress?: (filePath: string) => void;
 }
 
 /**
@@ -78,7 +78,7 @@ export class Converter {
   private readonly verbose: boolean;
   private readonly outputFormat: 'markdown' | 'mdx' | 'fumadocs';
   private readonly brokenLinks: string[] = [];
-  private readonly onProgress?: () => void;
+  private readonly onProgress?: (filePath: string) => void;
 
   constructor(
     private readonly config: Config,
@@ -184,7 +184,7 @@ export class Converter {
     for (const mdFile of mdFiles) {
       const result = await this.convertFile(mdFile, sourcePath);
       results.push(result);
-      this.onProgress?.();
+      this.onProgress?.(mdFile);
     }
 
     return results;
