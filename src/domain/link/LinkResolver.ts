@@ -50,6 +50,10 @@ export interface LinkResolutionResult {
   hasConflict?: boolean;
   /** All matching files if there was a conflict */
   conflictingFiles?: IndexedFile[];
+  /** Whether fuzzy matching was used to find this file */
+  hasFuzzyMatch?: boolean;
+  /** Levenshtein distance if fuzzy match was used */
+  fuzzyMatchDistance?: number;
 }
 
 /**
@@ -68,6 +72,12 @@ export interface LinkResolverOptions {
   autoIndex?: boolean;
   /** Verbose logging (default: false) */
   verbose?: boolean;
+  /** Enable fuzzy matching when exact match fails (default: false) */
+  fuzzyMatch?: boolean;
+  /** Maximum Levenshtein distance for fuzzy matching (default: 3) */
+  fuzzyMaxDistance?: number;
+  /** Warn when fuzzy match is used (default: true) */
+  warnOnFuzzyMatch?: boolean;
 }
 
 /**
@@ -97,6 +107,9 @@ export class LinkResolver {
   private readonly strictMode: boolean;
   private readonly autoIndex: boolean;
   private readonly verbose: boolean;
+  private readonly fuzzyMatch: boolean;
+  private readonly fuzzyMaxDistance: number;
+  private readonly warnOnFuzzyMatch: boolean;
   private readonly brokenLinks: string[] = [];
   private readonly enhancedBrokenLinks: BrokenLinkInfo[] = [];
   private sourceRoots: string[] = [];
@@ -110,6 +123,9 @@ export class LinkResolver {
     this.autoIndex = options.autoIndex ?? true;
     this.verbose = options.verbose ?? false;
     this.errorReporter = new ErrorReporter(options.verbose ?? false);
+    this.fuzzyMatch = options.fuzzyMatch ?? false;
+    this.fuzzyMaxDistance = options.fuzzyMaxDistance ?? 3;
+    this.warnOnFuzzyMatch = options.warnOnFuzzyMatch ?? true;
   }
 
   /**
@@ -156,9 +172,13 @@ export class LinkResolver {
     const basename = this.getBasename(normalizedTarget);
     const allMatches = this.findAllByBasename(basename);
 
-    // If no exact match but found basename matches, apply conflict resolution
-    if (!indexedFile && allMatches.length > 0) {
+    // If there are multiple files with same basename, apply conflict resolution
+    // even if an exact path match was found - to ensure we pick the nearest one
+    if (allMatches.length > 1) {
       indexedFile = this.resolveConflict(allMatches, currentFilePath, sourceRoot);
+    } else if (!indexedFile && allMatches.length === 1) {
+      // Single match by basename, use it
+      indexedFile = allMatches[0];
     }
 
     if (indexedFile) {
@@ -179,6 +199,35 @@ export class LinkResolver {
         isBroken: false,
         hasConflict,
         conflictingFiles: hasConflict ? allMatches : undefined,
+      };
+    }
+
+    // Link not found - try fuzzy matching if enabled
+    let fuzzyMatchedFile: IndexedFile | undefined;
+    let fuzzyDistance: number | undefined;
+
+    if (this.fuzzyMatch) {
+      const fuzzyResult = this.findFuzzyMatch(normalizedTarget, currentFilePath, sourceRoot);
+      if (fuzzyResult) {
+        fuzzyMatchedFile = fuzzyResult.file;
+        fuzzyDistance = fuzzyResult.distance;
+      }
+    }
+
+    if (fuzzyMatchedFile) {
+      this.handleFuzzyMatchWarning(target, fuzzyMatchedFile, fuzzyDistance!);
+
+      const currentDir = path.dirname(currentFilePath);
+      const relativePath = this.calculateRelativePath(currentDir, fuzzyMatchedFile.absolutePath, sourceRoot);
+
+      return {
+        found: true,
+        file: fuzzyMatchedFile,
+        relativePath,
+        isBroken: false,
+        hasConflict: false,
+        hasFuzzyMatch: true,
+        fuzzyMatchDistance: fuzzyDistance,
       };
     }
 
@@ -487,6 +536,98 @@ export class LinkResolver {
         `\nSelected: ${matches[0].relativePath}`
       );
     }
+  }
+
+  private handleFuzzyMatchWarning(target: string, matchedFile: IndexedFile, distance: number): void {
+    if (this.warnOnFuzzyMatch) {
+      console.warn(
+        `Warning: Link [[${target}]] was resolved using fuzzy match (distance: ${distance}):\n` +
+        `  Matched: ${matchedFile.relativePath}`
+      );
+    }
+  }
+
+  /**
+   * Find a fuzzy match for the target when exact match fails
+   */
+  private findFuzzyMatch(target: string, currentFilePath: string, sourceRoot: string): { file: IndexedFile; distance: number } | undefined {
+    const targetBasename = this.getBasename(target);
+    const targetDir = path.dirname(target);
+    const currentDir = path.dirname(currentFilePath);
+
+    let bestMatch: IndexedFile | undefined;
+    let bestDistance = Infinity;
+    let bestScore = Infinity;
+
+    for (const file of this.fileIndex.values()) {
+      // Calculate Levenshtein distance between target basename and file basename
+      const distance = this.levenshteinDistance(targetBasename, file.basename);
+
+      // Skip if distance exceeds maximum allowed
+      if (distance > this.fuzzyMaxDistance) {
+        continue;
+      }
+
+      // Calculate path proximity score (lower is better)
+      // Prefer files in the same directory or nearby directories
+      const fileDir = path.dirname(file.absolutePath);
+      const relativeToCurrent = path.relative(currentDir, fileDir);
+      const pathProximity = this.calculatePathDistance(relativeToCurrent);
+
+      // Combined score: weighted sum of edit distance and path proximity
+      // Path proximity is weighted less (multiplied by 0.5) since it's a secondary factor
+      const combinedScore = distance + pathProximity * 0.5;
+
+      if (combinedScore < bestScore) {
+        bestScore = combinedScore;
+        bestDistance = distance;
+        bestMatch = file;
+      }
+    }
+
+    if (bestMatch) {
+      this.log(`Fuzzy match found for [[${target}]]: ${bestMatch.relativePath} (distance: ${bestDistance})`);
+      return { file: bestMatch, distance: bestDistance };
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Calculate Levenshtein (edit) distance between two strings
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const len1 = str1.length;
+    const len2 = str2.length;
+
+    // Create a matrix to store distances
+    const matrix: number[][] = Array(len1 + 1)
+      .fill(null)
+      .map(() => Array(len2 + 1).fill(0));
+
+    // Initialize first column
+    for (let i = 0; i <= len1; i++) {
+      matrix[i][0] = i;
+    }
+
+    // Initialize first row
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    // Fill in the rest of the matrix
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,      // deletion
+          matrix[i][j - 1] + 1,      // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        );
+      }
+    }
+
+    return matrix[len1][len2];
   }
 
   private normalizePath(p: string): string {
