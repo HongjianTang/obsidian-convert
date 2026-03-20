@@ -12,6 +12,8 @@ import { ErrorReporter, ErrorLevel } from '../../../domain/error';
 export interface ConvertCommandOptions {
   /** Path to config file */
   configPath: string;
+  /** Override input/source directory (CLI-only mode) */
+  input?: string;
   /** Override output directory */
   outputDir?: string;
   /** Dry run mode */
@@ -302,11 +304,26 @@ export class ConvertCommand {
   }
 
   private async loadConfig(): Promise<Config> {
-    const { configPath, outputDir } = this.options;
+    const { configPath, input, outputDir } = this.options;
 
     // Check if config file exists
     const absoluteConfigPath = path.resolve(configPath);
-    if (!await this.configLoader.exists(absoluteConfigPath)) {
+    const configExists = await this.configLoader.exists(absoluteConfigPath);
+
+    // CLI-only mode: when no config file exists but input is provided
+    if (!configExists && input) {
+      // Build Config directly from CLI arguments
+      const absoluteInputPath = path.resolve(input);
+      const absoluteOutputPath = outputDir ? path.resolve(outputDir) : path.resolve('./docs');
+
+      return {
+        sourceFolders: [{ path: absoluteInputPath }],
+        outputDir: absoluteOutputPath,
+      };
+    }
+
+    // Config file mode: require config file to exist
+    if (!configExists) {
       throw new ConfigError(
         `Configuration file not found: ${absoluteConfigPath}`,
         absoluteConfigPath
@@ -315,6 +332,12 @@ export class ConvertCommand {
 
     // Load config
     const config = await this.configLoader.load(absoluteConfigPath);
+
+    // Override source folders if input is specified via CLI
+    if (input) {
+      const absoluteInputPath = path.resolve(input);
+      config.sourceFolders = [{ path: absoluteInputPath }];
+    }
 
     // Override output directory if specified
     if (outputDir) {
@@ -335,10 +358,11 @@ export class ConvertCommand {
     for (const folder of config.sourceFolders) {
       const absolutePath = path.resolve(folder.path);
       if (!fs.existsSync(absolutePath)) {
-        return `Source folder not found: ${absolutePath}`;
+        return `Source path not found: ${absolutePath}`;
       }
-      if (!fs.statSync(absolutePath).isDirectory()) {
-        return `Source path is not a directory: ${absolutePath}`;
+      const stats = fs.statSync(absolutePath);
+      if (!stats.isDirectory() && !stats.isFile()) {
+        return `Source path is not a valid file or directory: ${absolutePath}`;
       }
     }
     return null;
