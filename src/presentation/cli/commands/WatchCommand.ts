@@ -6,6 +6,7 @@ import { Converter, FileConversionResult } from '../../../application/convert';
 import { FileWatcher, FileChangeEvent } from '../../../application/watch/FileWatcher';
 import { DependencyGraph } from '../../../application/watch/DependencyGraph';
 import { EventLog, FileConversionRecord } from '../../../application/watch/EventLog';
+import { InteractiveWatchHandler } from '../ProgressTracker';
 
 /**
  * Options for the watch command
@@ -19,6 +20,8 @@ export interface WatchCommandOptions {
   dryRun: boolean;
   /** Verbose logging */
   verbose: boolean;
+  /** Enable interactive mode */
+  interactive: boolean;
   /** Output format */
   outputFormat?: 'markdown' | 'mdx' | 'fumadocs';
   /** How to handle broken links */
@@ -50,6 +53,9 @@ export class WatchCommand {
   private isRunning: boolean = false;
   private pendingConversions: Set<string> = new Set();
   private conversionTimer?: NodeJS.Timeout;
+  private interactiveHandler?: InteractiveWatchHandler;
+  private totalConverted = 0;
+  private totalErrors = 0;
 
   constructor(private readonly options: WatchCommandOptions) {
     this.eventLog = new EventLog();
@@ -76,6 +82,12 @@ export class WatchCommand {
 
       // Setup signal handlers for graceful shutdown
       this.setupSignalHandlers();
+
+      // Initialize interactive handler if in interactive mode
+      if (this.options.interactive) {
+        this.interactiveHandler = new InteractiveWatchHandler(true);
+        console.log('Press p to pause/resume, s for status, Ctrl+C to exit\n');
+      }
 
       // Initialize the converter
       this.converter = new Converter(this.config, {
@@ -212,6 +224,12 @@ export class WatchCommand {
       return;
     }
 
+    // Check if paused
+    if (this.interactiveHandler?.isWatchPaused()) {
+      console.log('\n⏸️  Watch is paused, queuing changes for when resumed...');
+      return;
+    }
+
     const filesToConvert = new Set<string>();
 
     // For each pending file, get files that need reconversion
@@ -239,9 +257,20 @@ export class WatchCommand {
 
       if (result.success) {
         successCount++;
+        this.totalConverted++;
       } else {
         failCount++;
+        this.totalErrors++;
       }
+    }
+
+    // Update interactive handler stats
+    if (this.interactiveHandler) {
+      this.interactiveHandler.updateStats(
+        this.pendingConversions.size,
+        this.totalConverted,
+        this.totalErrors
+      );
     }
 
     const duration = Date.now() - startTime;
@@ -412,6 +441,10 @@ export class WatchCommand {
 
     if (this.fileWatcher) {
       this.fileWatcher.close();
+    }
+
+    if (this.interactiveHandler) {
+      this.interactiveHandler.dispose();
     }
 
     this.eventLog.logWatchStop();
