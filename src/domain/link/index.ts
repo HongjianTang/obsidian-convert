@@ -9,6 +9,6 @@ export type {
   PathResolutionDetail,
 } from './LinkResolver';
 export { WikiLinkProcessor } from './WikiLinkProcessor';
-export type { WikiLinkProcessorOptions, WikiLinkProcessResult } from './WikiLinkProcessor';
+export type { WikiLinkProcessorOptions, WikiLinkProcessResult, BrokenLinkTargetConfig } from './WikiLinkProcessor';
 export { LinkVerificationService } from './LinkVerificationService';
 export type { LinkVerificationResult, VerifiedLink } from './LinkVerificationService';
