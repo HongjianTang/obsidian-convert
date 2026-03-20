@@ -75,6 +75,15 @@ describe('WikiLinkProcessor', () => {
       expect(result.content).toContain('[思考]');
     });
 
+    it('should convert WikiLink with Chinese display text containing spaces', async () => {
+      const content = 'Link to [[note1|显示 文本 带空格]]';
+      const result = processor.process(content, path.join(tempDir, 'test.md'), tempDir);
+
+      expect(result.content).toContain('[显示 文本 带空格]');
+      expect(result.content).not.toContain('[[');
+      expect(result.convertedCount).toBe(1);
+    });
+
     it('should skip attachment WikiLinks', () => {
       const content = 'Image: ![[image.png]] and link [[note1]]';
       const result = processor.process(content, path.join(tempDir, 'test.md'), tempDir);
