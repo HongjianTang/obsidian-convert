@@ -13,6 +13,8 @@ OPTIONS:
   -o, --output <dir>    Output directory (overrides config)
   --dry-run             Preview conversion without writing files
   -v, --verbose         Show detailed output
+  --report <format>     Generate report (json or html)
+  --report-output <path> Output path for report file
   -h, --help            Show this help message
 
 EXIT CODES:
@@ -26,6 +28,8 @@ EXAMPLES:
   obsidian-convert -c ./my-config.yaml
   obsidian-convert -o ./output --verbose
   obsidian-convert --dry-run
+  obsidian-convert --report json
+  obsidian-convert --report html --report-output ./report.html
 
 For more information, see: https://github.com/limit/obsidian-convert
 `;

@@ -17,6 +17,8 @@ interface ParsedOptions {
   help: boolean;
   format: 'markdown' | 'mdx' | 'fumadocs';
   brokenLinks: 'keep' | 'remove' | 'placeholder';
+  report?: 'json' | 'html';
+  'report-output'?: string;
 }
 
 function parseCliArgs(): ParsedOptions {
@@ -54,6 +56,12 @@ function parseCliArgs(): ParsedOptions {
         type: 'string',
         default: 'keep',
       },
+      report: {
+        type: 'string',
+      },
+      'report-output': {
+        type: 'string',
+      },
     },
     allowPositionals: false,
   });
@@ -66,6 +74,8 @@ function parseCliArgs(): ParsedOptions {
     help: values.help as boolean,
     format: values.format as 'markdown' | 'mdx' | 'fumadocs',
     brokenLinks: values['broken-links'] as 'keep' | 'remove' | 'placeholder',
+    report: values.report as 'json' | 'html' | undefined,
+    'report-output': values['report-output'] as string | undefined,
   };
 }
 
@@ -87,6 +97,8 @@ async function main(): Promise<number> {
     verbose: options.verbose,
     outputFormat: options.format,
     brokenLinkHandling: options.brokenLinks,
+    report: options.report,
+    reportOutput: options['report-output'],
   });
 
   const result = await command.execute();

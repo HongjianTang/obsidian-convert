@@ -12,3 +12,13 @@ export {
   ConversionProgress,
   EventCallback,
 } from './types';
+export {
+  ReportSummary,
+  ReportFile,
+  ReportError,
+  ReportWarning,
+  ConversionReport,
+  ReportOptions,
+  FileTreeNode,
+  LinkGraphEdge,
+} from './report-types';

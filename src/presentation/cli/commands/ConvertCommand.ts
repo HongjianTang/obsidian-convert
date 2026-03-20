@@ -2,6 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { YamlConfigLoader, ConfigError, Config } from '../../../infrastructure/config';
 import { Converter, ConversionResult, MemoryMonitor, getGlobalMemoryMonitor } from '../../../application/convert';
+import { ReportGenerator } from '../../../infrastructure/report';
+import { ReportOptions } from '../../../api/report-types';
 import { ErrorReporter, ErrorLevel } from '../../../domain/error';
 
 /**
@@ -20,6 +22,10 @@ export interface ConvertCommandOptions {
   outputFormat?: 'markdown' | 'mdx' | 'fumadocs';
   /** How to handle broken links */
   brokenLinkHandling?: 'keep' | 'remove' | 'placeholder';
+  /** Report format: 'json' or 'html' */
+  report?: 'json' | 'html';
+  /** Report output path */
+  reportOutput?: string;
 }
 
 /**
@@ -107,6 +113,11 @@ export class ConvertCommand {
       // Output summary
       this.printSummary(result);
       this.printMemoryStats();
+
+      // Generate report if requested
+      if (this.options.report) {
+        await this.generateReport(result);
+      }
 
       return {
         success: true,
@@ -366,5 +377,23 @@ export class ConvertCommand {
         console.log(`  - ${file.sourcePath}: ${file.error}`);
       }
     }
+  }
+
+  private async generateReport(result: ConversionResult): Promise<void> {
+    const reportGenerator = new ReportGenerator();
+    reportGenerator.startTimer();
+
+    const reportOptions: ReportOptions = {
+      format: this.options.report || 'json',
+      outputPath: this.options.reportOutput,
+      includeMemoryStats: true,
+      includeFileTree: true,
+      includeLinkGraph: true,
+    };
+
+    const report = reportGenerator.generateReport(result, reportOptions);
+    const outputPath = await reportGenerator.writeReport(report, reportOptions);
+
+    console.log(`\nReport generated: ${outputPath}`);
   }
 }
