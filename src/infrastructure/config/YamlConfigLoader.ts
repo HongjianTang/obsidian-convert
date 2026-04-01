@@ -1,9 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { parse as parseYaml, YAMLParseError } from 'yaml';
 import { Config, ConfigLoader, SourceFolderConfig } from './Config';
-import { TransformerConfig, isValidPattern } from '../../domain/transformer';
-import { ErrorReporter, ErrorLevel, ErrorCategory, SourceLocation } from '../../domain/error';
+import {
+  BuiltInTransformerName,
+  TransformerConfig,
+  isValidPattern,
+} from '../../domain/transformer';
+import { ErrorReporter, SourceLocation } from '../../domain/error';
+
+const yaml: any = require('yaml');
 
 /**
  * Error thrown when configuration is invalid
@@ -25,6 +30,13 @@ export class ConfigError extends Error {
  */
 const DEFAULT_ATTACHMENT_DIR = 'public/attachments';
 
+const BUILT_IN_TRANSFORMER_NAMES: ReadonlyArray<BuiltInTransformerName> = [
+  'wikilink',
+  'callout',
+  'frontmatter',
+  'attachment',
+];
+
 /**
  * YAML-based configuration loader
  */
@@ -43,9 +55,9 @@ export class YamlConfigLoader implements ConfigLoader {
 
     let rawConfig: Record<string, unknown>;
     try {
-      rawConfig = parseYaml(content) as Record<string, unknown>;
-    } catch (error) {
-      if (error instanceof YAMLParseError) {
+      rawConfig = yaml.parse(content) as Record<string, unknown>;
+    } catch (error: unknown) {
+      if (error instanceof Error && (error as any).name === 'YAMLParseError') {
         const location = this.extractYamlLocation(error);
         const reporter = new ErrorReporter();
         reporter.addYamlError(error, absolutePath, content);
@@ -57,7 +69,7 @@ export class YamlConfigLoader implements ConfigLoader {
           location
         );
       }
-      throw error;
+      throw error instanceof Error ? error : new Error(String(error));
     }
 
     return this.validateAndBuild(rawConfig, absolutePath, content);
@@ -66,8 +78,8 @@ export class YamlConfigLoader implements ConfigLoader {
   /**
    * Extract location from YAML parse error
    */
-  private extractYamlLocation(error: YAMLParseError): SourceLocation {
-    const linePos = error.linePos;
+  private extractYamlLocation(error: unknown): SourceLocation {
+    const linePos = (error as any)?.linePos as Array<{ line: number; col: number }> | undefined;
     if (linePos && linePos[0]) {
       return {
         line: linePos[0].line,
@@ -75,7 +87,8 @@ export class YamlConfigLoader implements ConfigLoader {
       };
     }
     // Try to extract from error message
-    const match = error.message.match(/at line (\d+), column (\d+)/i);
+    const message = (error as any)?.message;
+    const match = typeof message === 'string' ? message.match(/at line (\d+), column (\d+)/i) : null;
     if (match) {
       return {
         line: parseInt(match[1], 10),
@@ -106,7 +119,17 @@ export class YamlConfigLoader implements ConfigLoader {
         );
       }
 
-      transformerConfig.custom = raw.custom.map((t: Record<string, unknown>, index: number) => {
+      transformerConfig.custom = raw.custom.map((item: unknown, index: number) => {
+        if (typeof item !== 'object' || item === null) {
+          throw new ConfigError(
+            `transformer.custom[${index}] must be an object`,
+            configPath,
+            `transformer.custom[${index}]`
+          );
+        }
+
+        const t = item as Record<string, unknown>;
+
         if (!t.name || typeof t.name !== 'string') {
           throw new ConfigError(
             `transformer.custom[${index}].name is required and must be a string`,
@@ -163,6 +186,14 @@ export class YamlConfigLoader implements ConfigLoader {
       transformerConfig.builtIn = {};
       const builtInRaw = raw.builtIn as Record<string, unknown>;
       for (const [key, value] of Object.entries(builtInRaw)) {
+        if (!BUILT_IN_TRANSFORMER_NAMES.includes(key as BuiltInTransformerName)) {
+          throw new ConfigError(
+            `transformer.builtIn.${key} is not a supported built-in transformer`,
+            configPath,
+            `transformer.builtIn.${key}`
+          );
+        }
+
         if (typeof value !== 'object' || value === null) {
           throw new ConfigError(
             `transformer.builtIn.${key} must be an object`,
@@ -171,7 +202,7 @@ export class YamlConfigLoader implements ConfigLoader {
           );
         }
         const builtInItem = value as Record<string, unknown>;
-        transformerConfig.builtIn[key as keyof typeof transformerConfig.builtIn] = {
+        transformerConfig.builtIn[key as BuiltInTransformerName] = {
           enabled: builtInItem.enabled !== false,
           options: builtInItem.options as Record<string, unknown> | undefined,
         };
@@ -210,8 +241,6 @@ export class YamlConfigLoader implements ConfigLoader {
     configPath: string,
     content?: string
   ): Config {
-    const reporter = new ErrorReporter();
-
     // Validate sourceFolders
     if (!raw.sourceFolders) {
       const location = content ? { line: this.findFieldLine(content, 'sourceFolders'), column: 1 } : { line: 1, column: 1 };
@@ -320,7 +349,6 @@ export class YamlConfigLoader implements ConfigLoader {
    */
   private findArrayFieldLine(content: string, fieldName: string, index: number): number {
     const lines = content.split(/\r?\n/);
-    let arrayDepth = 0;
     let currentIndex = 0;
     let inTargetArray = false;
 
