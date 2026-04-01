@@ -1,0 +1,5 @@
+sourceFolders:
+  - path: D:/Limit/Publish/Original
+outputDir: D:/Limit/Publish/Convert
+autoTitle: true
+

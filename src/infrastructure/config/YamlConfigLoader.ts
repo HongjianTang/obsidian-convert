@@ -277,6 +277,18 @@ export class YamlConfigLoader implements ConfigLoader {
       attachmentDir: (raw.attachmentDir as string) || DEFAULT_ATTACHMENT_DIR,
     };
 
+    if (raw.autoTitle !== undefined) {
+      if (typeof raw.autoTitle !== 'boolean') {
+        throw new ConfigError(
+          'autoTitle must be a boolean',
+          configPath,
+          'autoTitle',
+          { line: this.findFieldLine(content || '', 'autoTitle'), column: 1 }
+        );
+      }
+      config.autoTitle = raw.autoTitle;
+    }
+
     // Validate and load transformer configuration
     if (raw.transformer !== undefined) {
       config.transformer = this.parseTransformerConfig(
