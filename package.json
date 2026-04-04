@@ -9,7 +9,12 @@
     "build": "tsc --project tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsc --project tsconfig.build.json --watch",
-    "test": "jest"
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "jest --testPathPatterns='tests/e2e'",
+    "test:unit": "jest --testPathPatterns='tests/unit'",
+    "benchmark": "node tests/benchmarks/run.js",
+    "lint": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +24,7 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^25.4.0",
+    "benchmark": "^2.1.4",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
